@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"runtime/debug"
 )
 
 type Done struct {
@@ -62,20 +63,24 @@ func GoWithErrorHandler(fn func() error, errorHandler func(error), ctx ...contex
 }
 
 func ChanGo(fn func(), ctx ...context.Context) chan Done {
+	var err error
 	doneCh := make(chan Done, 1)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				doneCh <- Done{Error: errors.New(fmt.Sprintf("recovered from panic in goroutine: %v", r))}
+				err = &PanicError{
+					Value:      r,
+					StackTrace: string(debug.Stack()),
+				}
 			}
-			doneCh <- Done{Error: nil}
+			doneCh <- Done{Error: err}
 			close(doneCh)
 		}()
 		if len(ctx) > 0 {
 			c := ctx[0]
 			select {
 			case <-c.Done():
-				doneCh <- Done{Error: errors.New(fmt.Sprintf("goroutine cancelled: %v", c.Err()))}
+				err = &CancelError{Cause: c.Err()}
 				return
 			default:
 				fn()
@@ -88,29 +93,33 @@ func ChanGo(fn func(), ctx ...context.Context) chan Done {
 }
 
 func ChanGoWithError(fn func() error, ctx ...context.Context) chan Done {
+	var err error
 	doneCh := make(chan Done, 1)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				doneCh <- Done{Error: errors.New(fmt.Sprintf("recovered from panic in goroutine: %v", r))}
+				err = &PanicError{
+					Value:      r,
+					StackTrace: string(debug.Stack()),
+				}
 			}
-			doneCh <- Done{Error: nil}
+			doneCh <- Done{Error: err}
 			close(doneCh)
 		}()
 		if len(ctx) > 0 {
 			c := ctx[0]
 			select {
 			case <-c.Done():
-				doneCh <- Done{Error: errors.New(fmt.Sprintf("goroutine cancelled: %v", c.Err()))}
+				err = &CancelError{Cause: c.Err()}
 				return
 			default:
-				if err := fn(); err != nil {
-					doneCh <- Done{Error: err}
+				if e := fn(); e != nil {
+					err = e
 				}
 			}
 		} else {
-			if err := fn(); err != nil {
-				doneCh <- Done{Error: err}
+			if e := fn(); e != nil {
+				err = e
 			}
 		}
 	}()
