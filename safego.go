@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"runtime/debug"
 )
 
@@ -16,14 +15,14 @@ func Go(fn func(), ctx ...context.Context) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Println("recovered from panic in goroutine:", r)
+				logger.Printf("recovered from panic in goroutine: %v", r)
 			}
 		}()
 		if len(ctx) > 0 {
 			c := ctx[0]
 			select {
 			case <-c.Done():
-				log.Println("goroutine cancelled:", c.Err())
+				logger.Printf("goroutine cancelled: %v", c.Err())
 				return
 			default:
 				fn()
