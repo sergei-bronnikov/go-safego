@@ -7,6 +7,10 @@ import (
 	"log"
 )
 
+type Done struct {
+	Error error
+}
+
 func Go(fn func(), ctx ...context.Context) {
 	go func() {
 		defer func() {
@@ -57,20 +61,21 @@ func GoWithErrorHandler(fn func() error, errorHandler func(error), ctx ...contex
 	}()
 }
 
-func ChanGo(fn func(), ctx ...context.Context) chan error {
-	errChan := make(chan error, 1)
+func ChanGo(fn func(), ctx ...context.Context) chan Done {
+	doneCh := make(chan Done, 1)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				errChan <- errors.New(fmt.Sprintf("recovered from panic in goroutine: %v", r))
+				doneCh <- Done{Error: errors.New(fmt.Sprintf("recovered from panic in goroutine: %v", r))}
 			}
-			close(errChan)
+			doneCh <- Done{Error: nil}
+			close(doneCh)
 		}()
 		if len(ctx) > 0 {
 			c := ctx[0]
 			select {
 			case <-c.Done():
-				errChan <- errors.New(fmt.Sprintf("goroutine cancelled: %v", c.Err()))
+				doneCh <- Done{Error: errors.New(fmt.Sprintf("goroutine cancelled: %v", c.Err()))}
 				return
 			default:
 				fn()
@@ -79,34 +84,35 @@ func ChanGo(fn func(), ctx ...context.Context) chan error {
 			fn()
 		}
 	}()
-	return errChan
+	return doneCh
 }
 
-func ChanGoWithError(fn func() error, ctx ...context.Context) chan error {
-	errChan := make(chan error, 1)
+func ChanGoWithError(fn func() error, ctx ...context.Context) chan Done {
+	doneCh := make(chan Done, 1)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				errChan <- errors.New(fmt.Sprintf("recovered from panic in goroutine: %v", r))
+				doneCh <- Done{Error: errors.New(fmt.Sprintf("recovered from panic in goroutine: %v", r))}
 			}
-			close(errChan)
+			doneCh <- Done{Error: nil}
+			close(doneCh)
 		}()
 		if len(ctx) > 0 {
 			c := ctx[0]
 			select {
 			case <-c.Done():
-				errChan <- errors.New(fmt.Sprintf("goroutine cancelled: %v", c.Err()))
+				doneCh <- Done{Error: errors.New(fmt.Sprintf("goroutine cancelled: %v", c.Err()))}
 				return
 			default:
 				if err := fn(); err != nil {
-					errChan <- err
+					doneCh <- Done{Error: err}
 				}
 			}
 		} else {
 			if err := fn(); err != nil {
-				errChan <- err
+				doneCh <- Done{Error: err}
 			}
 		}
 	}()
-	return errChan
+	return doneCh
 }
